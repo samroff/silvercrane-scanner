@@ -72,18 +72,27 @@ const SB_URL='https://wbkmfccsxsubtbugzcvr.supabase.co';
 const SB_KEY='sb_publishable_vQPPO8xRtEVTjFhjmURGQA_4SQR2BW6';
 let sbClient=null, sbChannel=null, sbReady=false;
 function initLive(){
+  const dot=document.getElementById('live-dot');
+  const lbl=document.getElementById('live-label');
+  function setStatus(txt,color){if(dot)dot.style.background=color;if(lbl)lbl.textContent=txt;}
   try{
-    if(typeof supabase==='undefined'||!supabase.createClient)return;
+    if(typeof supabase==='undefined'||!supabase.createClient){setStatus('NO SDK','var(--red)');return;}
+    setStatus('CONNECTING','var(--amber)');
     sbClient=supabase.createClient(SB_URL,SB_KEY);
     sbChannel=sbClient.channel('silvercrane-scanner',{config:{broadcast:{self:false}}});
-    sbChannel.subscribe(status=>{
+    sbChannel.subscribe((status,err)=>{
       sbReady=(status==='SUBSCRIBED');
-      const dot=document.getElementById('live-dot');
-      const lbl=document.getElementById('live-label');
-      if(dot)dot.style.background=sbReady?'var(--green)':'var(--text2)';
-      if(lbl)lbl.textContent=sbReady?'LIVE':'OFFLINE';
+      if(sbReady)setStatus('LIVE','var(--green)');
+      else if(status==='CHANNEL_ERROR')setStatus('CH ERR','var(--red)');
+      else if(status==='TIMED_OUT')setStatus('TIMEOUT','var(--red)');
+      else if(status==='CLOSED')setStatus('CLOSED','var(--text2)');
+      else setStatus(status||'OFFLINE','var(--amber)');
+      if(err)console.warn('channel err',err);
     });
-  }catch(e){console.warn('live init failed',e);}
+  }catch(e){
+    console.warn('live init failed',e);
+    setStatus('INIT FAIL','var(--red)');
+  }
 }
 function flashLive(){
   const dot=document.getElementById('live-dot');if(!dot)return;
