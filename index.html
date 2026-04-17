@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <title>Silver Crane — Scanner</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 :root{--bg:#0a0e1a;--bg2:#111827;--text:#e2e8f0;--text2:#64748b;--accent:#1e90ff;--green:#00e676;--red:#ff5252;--amber:#ffab00;--border:#1e293b;--fd:'JetBrains Mono',monospace;--fh:'Inter',sans-serif;}
@@ -33,7 +34,13 @@ input.fc:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(30,144,255,.
 <body>
 <div class="header">
   <div class="logo">SILVER <span>CRANE</span></div>
-  <div style="display:flex;align-items:center;gap:10px;"><a href="https://silvercrane.pages.dev" target="_blank" style="font-size:9px;color:var(--accent);text-decoration:none;padding:4px 8px;border:1px solid var(--accent);border-radius:4px;">MAIN SITE</a><span style="font-size:10px;color:var(--text2);letter-spacing:1px;">SCANNER</span></div>
+  <div style="display:flex;align-items:center;gap:10px;">
+    <span style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;background:var(--bg);border:1px solid var(--border);border-radius:20px;font-size:10px;letter-spacing:1px;">
+      <span id="live-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--text2);transition:box-shadow .3s;"></span>
+      <span id="live-label" style="color:var(--text2);font-family:var(--fd);font-weight:700;">OFFLINE</span>
+    </span>
+    <div style="font-size:10px;color:var(--text2);letter-spacing:1px;">SCANNER</div>
+  </div>
 </div>
 <div class="main">
   <div class="card">
@@ -60,6 +67,38 @@ input.fc:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(30,144,255,.
 <script>
 const data={barcodes:{},log:[]};
 
+// ---- Supabase live link ----
+const SB_URL='https://wbkmfccsxsubtbugzcvr.supabase.co';
+const SB_KEY='sb_publishable_vQPPO8xRtEVTjFhjmURGQA_4SQR2BW6';
+let sbClient=null, sbChannel=null, sbReady=false;
+function initLive(){
+  try{
+    if(typeof supabase==='undefined'||!supabase.createClient)return;
+    sbClient=supabase.createClient(SB_URL,SB_KEY);
+    sbChannel=sbClient.channel('silvercrane-scanner',{config:{broadcast:{self:false}}});
+    sbChannel.subscribe(status=>{
+      sbReady=(status==='SUBSCRIBED');
+      const dot=document.getElementById('live-dot');
+      const lbl=document.getElementById('live-label');
+      if(dot)dot.style.background=sbReady?'var(--green)':'var(--text2)';
+      if(lbl)lbl.textContent=sbReady?'LIVE':'OFFLINE';
+    });
+  }catch(e){console.warn('live init failed',e);}
+}
+function flashLive(){
+  const dot=document.getElementById('live-dot');if(!dot)return;
+  dot.style.boxShadow='0 0 0 6px rgba(0,230,118,.35)';
+  setTimeout(()=>{dot.style.boxShadow='none';},400);
+}
+function broadcastScan(code){
+  if(!sbReady||!sbChannel)return;
+  try{sbChannel.send({type:'broadcast',event:'scan',payload:{code,time:new Date().toISOString()}});}catch(_){}
+}
+function broadcastReset(){
+  if(!sbReady||!sbChannel)return;
+  try{sbChannel.send({type:'broadcast',event:'reset',payload:{}});}catch(_){}
+}
+
 function onScanKey(e){
   if(e.key==='Enter'){
     e.preventDefault();
@@ -79,6 +118,8 @@ function processScan(code){
   data.log.push({code,time:now});
   updateDisplay();
   beep();
+  broadcastScan(code);
+  flashLive();
 }
 
 function beep(){
@@ -135,6 +176,7 @@ function resetScan(){
   if(data.log.length&&!confirm('Reset all scan data?'))return;
   data.barcodes={};data.log=[];
   updateDisplay();
+  broadcastReset();
   toast('Reset','green');
 }
 
@@ -166,6 +208,7 @@ function toast(msg,type){
 window.addEventListener('load',()=>{
   document.getElementById('scan-input').focus();
   updateDisplay();
+  initLive();
 });
 // Re-focus when tapping anywhere (scanner might lose focus)
 document.addEventListener('click',()=>{
