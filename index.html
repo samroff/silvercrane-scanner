@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <title>Silver Crane — Scanner</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 :root{--bg:#0a0e1a;--bg2:#111827;--text:#e2e8f0;--text2:#64748b;--accent:#1e90ff;--green:#00e676;--red:#ff5252;--amber:#ffab00;--border:#1e293b;--fd:'JetBrains Mono',monospace;--fh:'Inter',sans-serif;}
@@ -68,47 +67,48 @@ input.fc:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(30,144,255,.
 <script>
 const data={barcodes:{},log:[]};
 
-// ---- Supabase live link ----
+// ---- Supabase REST link (HTTPS only — works through firewalls that block WS) ----
 const SB_URL='https://wbkmfccsxsubtbugzcvr.supabase.co';
 const SB_KEY='sb_publishable_vQPPO8xRtEVTjFhjmURGQA_4SQR2BW6';
-let sbClient=null, sbChannel=null, sbReady=false;
+const DEVICE_ID='tc21_'+Math.random().toString(36).slice(2,8);
+let sbOk=false;
+function dom(id){return document.getElementById(id);}
+function setStatus(txt,color){
+  const dot=dom('live-dot'),lbl=dom('live-label'),dbg=dom('live-dbg');
+  if(dot)dot.style.background=color;
+  if(lbl)lbl.textContent=txt;
+  if(dbg)dbg.textContent=txt;
+}
 function initLive(){
-  const dot=document.getElementById('live-dot');
-  const lbl=document.getElementById('live-label');
-  const dbg=document.getElementById('live-dbg');
-  function setStatus(txt,color){if(dot)dot.style.background=color;if(lbl)lbl.textContent=txt;if(dbg)dbg.textContent=txt;}
-  try{
-    if(typeof supabase==='undefined'||!supabase.createClient){setStatus('NO SDK','var(--red)');return;}
-    setStatus('CONNECTING','var(--amber)');
-    sbClient=supabase.createClient(SB_URL,SB_KEY);
-    sbChannel=sbClient.channel('silvercrane-scanner',{config:{broadcast:{self:false}}});
-    sbChannel.subscribe((status,err)=>{
-      sbReady=(status==='SUBSCRIBED');
-      if(sbReady)setStatus('LIVE','var(--green)');
-      else if(status==='CHANNEL_ERROR')setStatus('CH ERR','var(--red)');
-      else if(status==='TIMED_OUT')setStatus('TIMEOUT','var(--red)');
-      else if(status==='CLOSED')setStatus('CLOSED','var(--text2)');
-      else setStatus(status||'OFFLINE','var(--amber)');
-      if(err&&dbg)dbg.textContent+=' · '+(err.message||err);
-    });
-  }catch(e){
-    console.warn('live init failed',e);
-    setStatus('INIT FAIL','var(--red)');
-    if(dbg)dbg.textContent+=' · '+(e.message||e);
-  }
+  // Ping the REST endpoint once to confirm reachable; status stays LIVE while inserts succeed.
+  setStatus('CONNECTING','var(--amber)');
+  fetch(SB_URL+'/rest/v1/scans?select=id&limit=1',{
+    headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY}
+  }).then(r=>{
+    if(r.ok){sbOk=true;setStatus('LIVE','var(--green)');}
+    else{setStatus('HTTP '+r.status,'var(--red)');}
+  }).catch(e=>{setStatus('NO NET','var(--red)');const dbg=dom('live-dbg');if(dbg)dbg.textContent+=' · '+(e.message||e);});
 }
 function flashLive(){
-  const dot=document.getElementById('live-dot');if(!dot)return;
+  const dot=dom('live-dot');if(!dot)return;
   dot.style.boxShadow='0 0 0 6px rgba(0,230,118,.35)';
   setTimeout(()=>{dot.style.boxShadow='none';},400);
 }
-function broadcastScan(code){
-  if(!sbReady||!sbChannel)return;
-  try{sbChannel.send({type:'broadcast',event:'scan',payload:{code,time:new Date().toISOString()}});}catch(_){}
+function sendScan(code){
+  return fetch(SB_URL+'/rest/v1/scans',{
+    method:'POST',
+    headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',Prefer:'return=minimal'},
+    body:JSON.stringify({code,device:DEVICE_ID})
+  }).then(r=>{
+    if(r.ok){sbOk=true;setStatus('LIVE','var(--green)');flashLive();}
+    else{setStatus('HTTP '+r.status,'var(--red)');}
+  }).catch(e=>{setStatus('SEND FAIL','var(--red)');});
 }
-function broadcastReset(){
-  if(!sbReady||!sbChannel)return;
-  try{sbChannel.send({type:'broadcast',event:'reset',payload:{}});}catch(_){}
+function sendReset(){
+  return fetch(SB_URL+'/rest/v1/scans?id=gt.0',{
+    method:'DELETE',
+    headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY}
+  }).catch(()=>{});
 }
 
 function onScanKey(e){
@@ -130,8 +130,7 @@ function processScan(code){
   data.log.push({code,time:now});
   updateDisplay();
   beep();
-  broadcastScan(code);
-  flashLive();
+  sendScan(code);
 }
 
 function beep(){
@@ -188,7 +187,7 @@ function resetScan(){
   if(data.log.length&&!confirm('Reset all scan data?'))return;
   data.barcodes={};data.log=[];
   updateDisplay();
-  broadcastReset();
+  sendReset();
   toast('Reset','green');
 }
 
