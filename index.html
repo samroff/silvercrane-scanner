@@ -55,6 +55,7 @@ input.fc:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(30,144,255,.
       <div style="margin-bottom:12px;font-size:11px;color:var(--text2);">Tap below then scan with your Zebra TC21</div>
       <input type="text" class="fc" id="scan-input" placeholder="Tap here, then scan..." autocomplete="off" inputmode="none" onkeydown="onScanKey(event)">
       <div id="scan-display" style="margin-top:20px;"></div>
+      <div id="live-dbg" style="margin-top:12px;font-family:var(--fd);font-size:10px;color:var(--text2);opacity:.7;">link: idle</div>
     </div>
   </div>
   <div class="card">
@@ -74,7 +75,8 @@ let sbClient=null, sbChannel=null, sbReady=false;
 function initLive(){
   const dot=document.getElementById('live-dot');
   const lbl=document.getElementById('live-label');
-  function setStatus(txt,color){if(dot)dot.style.background=color;if(lbl)lbl.textContent=txt;}
+  const dbg=document.getElementById('live-dbg');
+  function setStatus(txt,color){if(dot)dot.style.background=color;if(lbl)lbl.textContent=txt;if(dbg)dbg.textContent=txt;}
   try{
     if(typeof supabase==='undefined'||!supabase.createClient){setStatus('NO SDK','var(--red)');return;}
     setStatus('CONNECTING','var(--amber)');
@@ -87,11 +89,12 @@ function initLive(){
       else if(status==='TIMED_OUT')setStatus('TIMEOUT','var(--red)');
       else if(status==='CLOSED')setStatus('CLOSED','var(--text2)');
       else setStatus(status||'OFFLINE','var(--amber)');
-      if(err)console.warn('channel err',err);
+      if(err&&dbg)dbg.textContent+=' · '+(err.message||err);
     });
   }catch(e){
     console.warn('live init failed',e);
     setStatus('INIT FAIL','var(--red)');
+    if(dbg)dbg.textContent+=' · '+(e.message||e);
   }
 }
 function flashLive(){
